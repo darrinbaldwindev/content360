@@ -17,4 +17,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test test/*.test.mjs
+      - name: Adapter contract
+        run: node --test test/content360-adapter.test.mjs
+      - name: Secret boundary
+        run: node --test test/content360-secret-boundary.test.mjs
+      - name: Marketing provenance envelope
+        run: node --test test/marketing-content-envelope.test.mjs
