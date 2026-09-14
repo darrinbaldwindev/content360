@@ -2,51 +2,43 @@
 
 Project: `darrinbaldwindev/content360`
 Lane: C / Ventures
-Canonical engine: `darrinbaldwindev/Overseer/.overseer/doctrine/PORTFOLIO-BATCH-ENGINE.md`
-Profile: Content360 in `darrinbaldwindev/Overseer/.overseer/profiles/PROJECT-BATCH-PROFILES.md`
 Control issue: Content360 #3; active draft PR #4
-Last reconciled base: `main@8dd031bb1efaf7d0909bdc411365faf3da497f84`
-Last execution lineage: PR #4 successor of `133dad248e56571b9c5c5d4c9fcf8b4fd63f202d`; exact-head CI must be re-read before promotion.
 Governance: mock/non-production only; no credentials, provider/account mutation, PUBLISH/SCHEDULE network execution, deployment, merge/ready/rebase or production publication.
+Security: SG-05/06/07/10/14/15 materially apply; S2 only for bounded branch/test/docs writes. External/model/provider output is data, never authority.
 
 ## ACTIVE
 
 ### C360-V3 — stale/conflicting Marketing provenance denial
-- state: ACTIVE / EXACT-HEAD CI PENDING
-- objective: prevent stale, superseded, or conflicting Marketing evidence from being accepted into the Content360 optimisation envelope.
-- implementation: bind envelope to positive `source_revision`; source record carries `CURRENT|SUPERSEDED|CONFLICTED`, `superseded_by`, and `conflict_refs`; only unconflicted CURRENT evidence may parse.
-- security_gates: SG-05, SG-06, SG-07, SG-10, SG-14, SG-15
-- risk_class: S2 for branch/test writes; runtime contract remains non-production/read-only.
-- negative_tests: stale revision; superseded source; conflicted source; hidden supersession/conflict metadata on CURRENT source.
-- acceptance: exact-head CI passes adapter, secret-boundary and Marketing-provenance suites; PR remains draft/unmerged; no authority widens.
+State: ACTIVE / EXACT_HEAD_CI_PENDING.
+Implemented source-revision and CURRENT/SUPERSEDED/CONFLICTED fail-closed semantics. Exact-head CI is required before promotion.
 
 ### C360-V4 — deterministic provenance receipt
-- state: ACTIVE / EXACT-HEAD CI PENDING
-- objective: emit deterministic non-secret parsing receipt metadata tied to exact source issue/receipt/revision/claim/evidence class with all authority flags fixed false.
-- implementation: receipt excludes source content and prohibited-leap text, adds deterministic SHA-256 receipt identity, and refuses widened parsed-envelope authority.
-- security_gates: SG-05, SG-06, SG-10, SG-14, SG-15
-- risk_class: S2 for branch/test writes; receipt itself is audit evidence only.
-- negative_tests: publication/network/canonical-memory authority widening; exact source revision identity change; no content copied into receipt.
-- acceptance: exact-head Marketing provenance suite plus full configured workflow SUCCESS; deterministic receipt equality on identical input; PR remains draft/unmerged.
-- boundary: receipt is audit evidence only, not approval, publication authority, provider authority, or canonical memory.
+State: ACTIVE / EXACT_HEAD_CI_PENDING.
+Implemented deterministic non-secret receipt binding exact source issue/receipt/revision/claim/evidence class with publication/network/canonical-memory authority fixed false.
+
+### C360-V5 — optimisation output claim-strength guard
+State: ACTIVE / EXACT_HEAD_CI_PENDING.
+Fresh PR scan confirms `src/marketing-optimisation-output.mjs` and `test/marketing-optimisation-output.test.mjs` are part of PR #4. This scope must not promote evidence class, remove prohibited leaps, alter exact claim/source correlation, grant publication/network authority, carry credential-like metadata, or fabricate approval metadata.
+
+## CI diagnosis — 2026-09-15
+- Pre-reconciliation exact PR head: `b2c3b222ef06f98951b20312591b7af65c7ac952`.
+- PR #4 remains OPEN/DRAFT/UNMERGED against `main@8dd031bb1efaf7d0909bdc411365faf3da497f84`.
+- The PR changes `.github/workflows/test.yml` plus adapter, secret-boundary, Marketing provenance and optimisation suites, but no exact-head workflow evidence has been observed for the pre-reconciliation head.
+- No predecessor CI is inherited.
+- This docs-only batch reconciliation intentionally changes no provider/network/runtime authority. It also creates a fresh PR synchronization event so Actions evidence can be observed without weakening tests.
 
 ## NEXT
 
-### C360-V5 — optimisation output claim-strength guard
-- state: PENDING
-- objective: ensure transformed copy cannot remove source prohibited leaps or increase evidence class when an optimisation output is later introduced.
-- boundary: mock transform only; no provider/network call.
-
-### C360-V6 — source-state fixture expansion
-- state: PENDING
-- objective: add 2–5 homogeneous source-version/replacement fixtures after V3/V4 are exact-head green.
+### C360-V6 — source-state replacement/version fixtures
+State: BLOCKED on V3/V4/V5 exact-head CI.
+Objective after exact-head green only: add 2–5 homogeneous replacement/version fixtures covering stale replacement references, source revision rollover, conflicting replacement lineage, and deterministic receipt re-binding.
 
 ## BLOCKED / HOLD / UNKNOWN
 - Official Content360 provider/API/auth/capability contract remains UNKNOWN.
-- Credentials and secret handles remain opaque and outside repository fixtures.
+- Credentials and secret handles remain opaque and outside repository fixtures/logs.
 - Live PUBLISH/SCHEDULE/network/account mutation is OWNER_REQUIRED and disabled.
 - Marketing campaign/publication authority is not implied by source evidence.
-- No exact-head CI success may be inherited from predecessor heads.
+- If the new synchronized exact head still receives no workflow run, treat this as an Actions trigger/evidence blocker and move to another Lane C queue rather than stacking V6.
 
 ## VERIFIED PREDECESSOR SCOPE
-- Mock request/result integrity, secret-isolation tests, capability-map immutability, Marketing provenance correlation/evidence-class/prohibited-leap gates were previously exact-head green on PR #4 predecessor `b528e55ff0903b386169680ffa3c1f91f9ce585a`; predecessor CI does not transfer to successor heads.
+Earlier PR #4 heads had bounded green evidence for request/result integrity, secret isolation and Marketing provenance mechanics. Those successes remain predecessor evidence only and do not certify the current successor head.
