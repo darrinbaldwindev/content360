@@ -63,6 +63,14 @@ test('capability probe declares no network and no publish/schedule capability', 
   assert.equal(caps.operations.SCHEDULE, false);
 });
 
+test('capability probe nested operation map cannot be mutated into authority', () => {
+  const caps = new MockContent360Adapter().probeCapabilities();
+  assert.equal(Object.isFrozen(caps), true);
+  assert.equal(Object.isFrozen(caps.operations), true);
+  assert.throws(() => { caps.operations.PUBLISH = true; }, TypeError);
+  assert.equal(caps.operations.PUBLISH, false);
+});
+
 test('forged correlation id fails closed before execution', async () => {
   const adapter = new MockContent360Adapter();
   const req = createContent360Request({ mission_id: 'm-6', task_id: 't-6', operation: 'OPTIMISE', content: 'draft' });
@@ -82,6 +90,39 @@ test('forged side-effect metadata fails closed', async () => {
   const req = createContent360Request({ mission_id: 'm-8', task_id: 't-8', operation: 'OPTIMISE', content: 'draft' });
   const forged = { ...req, side_effecting: true };
   await assert.rejects(() => adapter.execute(forged), error => error.code === 'CONTENT360_REQUEST_INTEGRITY');
+});
+
+test('unknown request fields cannot smuggle capability or secret metadata', async () => {
+  const adapter = new MockContent360Adapter();
+  const req = createContent360Request({ mission_id: 'm-8b', task_id: 't-8b', operation: 'OPTIMISE', content: 'draft' });
+  const forged = { ...req, network_enabled: true, api_token: 'opaque-not-a-real-secret' };
+  await assert.rejects(
+    () => adapter.execute(forged),
+    error => error.code === 'CONTENT360_REQUEST_INTEGRITY' && /unsupported fields/.test(error.message)
+  );
+});
+
+test('non-side-effecting request cannot carry forged approval metadata', async () => {
+  const adapter = new MockContent360Adapter();
+  const req = createContent360Request({ mission_id: 'm-8c', task_id: 't-8c', operation: 'OPTIMISE', content: 'draft' });
+  const forged = { ...req, approval_ref: 'FORGED-OWNER-APPROVAL' };
+  await assert.rejects(
+    () => adapter.execute(forged),
+    error => error.code === 'CONTENT360_REQUEST_INTEGRITY' && /must not carry approval metadata/.test(error.message)
+  );
+});
+
+test('side-effecting request cannot drop approval metadata after construction', async () => {
+  const adapter = new MockContent360Adapter();
+  const req = createContent360Request({
+    mission_id: 'm-8d', task_id: 't-8d', operation: 'PUBLISH', content: 'draft',
+    approval: { approved: true, approval_ref: 'TEST-APPROVAL' }
+  });
+  const forged = { ...req, approval_ref: null };
+  await assert.rejects(
+    () => adapter.execute(forged),
+    error => error.code === 'CONTENT360_REQUEST_INTEGRITY' && /approval metadata mismatch/.test(error.message)
+  );
 });
 
 test('untrusted content cannot self-promote optimise into publish', async () => {
