@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseMarketingContentEnvelope } from '../src/marketing-content-envelope.mjs';
+import {
+  buildMarketingContentProvenanceReceipt,
+  parseMarketingContentEnvelope,
+} from '../src/marketing-content-envelope.mjs';
 import { marketingEvidenceRecords } from './fixtures/marketing-evidence-records.mjs';
 
 const sourceRecord = marketingEvidenceRecords[1];
@@ -143,4 +146,46 @@ test('current source records cannot silently carry supersession or conflict meta
     () => parseMarketingContentEnvelope(validEnvelope(sourceRecord), { ...sourceRecord, conflict_refs: ['Overseer#23:5667000003'] }),
     /unresolved conflicting evidence/,
   );
+});
+
+test('deterministic provenance receipt contains only bounded source metadata and zero authority flags', () => {
+  const parsed = parseMarketingContentEnvelope(validEnvelope(sourceRecord), sourceRecord);
+  const receiptA = buildMarketingContentProvenanceReceipt(parsed);
+  const receiptB = buildMarketingContentProvenanceReceipt(parsed);
+
+  assert.deepEqual(receiptA, receiptB);
+  assert.match(receiptA.receipt_id, /^sha256:[a-f0-9]{64}$/);
+  assert.equal(receiptA.source_issue, sourceRecord.source_issue);
+  assert.equal(receiptA.source_receipt, sourceRecord.source_receipt);
+  assert.equal(receiptA.source_revision, sourceRecord.source_revision);
+  assert.equal(receiptA.claim_id, sourceRecord.claim_id);
+  assert.equal(receiptA.evidence_class, sourceRecord.evidence_class);
+  assert.equal(receiptA.publication_authority, false);
+  assert.equal(receiptA.network_authority, false);
+  assert.equal(receiptA.canonical_memory_authority, false);
+  assert.equal(receiptA.disposition, 'PARSED_NON_PRODUCTION');
+  assert.equal('content' in receiptA, false);
+  assert.equal('prohibited_leaps' in receiptA, false);
+  assert.ok(Object.isFrozen(receiptA));
+});
+
+test('receipt identity changes when exact source provenance changes', () => {
+  const parsedA = parseMarketingContentEnvelope(validEnvelope(sourceRecord), sourceRecord);
+  const nextSource = { ...sourceRecord, source_revision: sourceRecord.source_revision + 1 };
+  const parsedB = parseMarketingContentEnvelope(validEnvelope(nextSource), nextSource);
+
+  assert.notEqual(
+    buildMarketingContentProvenanceReceipt(parsedA).receipt_id,
+    buildMarketingContentProvenanceReceipt(parsedB).receipt_id,
+  );
+});
+
+test('receipt builder refuses any parsed envelope with widened authority', () => {
+  const parsed = parseMarketingContentEnvelope(validEnvelope(sourceRecord), sourceRecord);
+  for (const field of ['publication_authority', 'network_authority', 'canonical_memory_authority']) {
+    assert.throws(
+      () => buildMarketingContentProvenanceReceipt({ ...parsed, [field]: true }),
+      /authority flags must remain false/,
+    );
+  }
 });
