@@ -11,6 +11,7 @@ function validEnvelope(source = sourceRecord, overrides = {}) {
     source_kind: 'marketing.evidence_label',
     source_issue: source.source_issue,
     source_receipt: source.source_receipt,
+    source_revision: source.source_revision,
     claim_id: source.claim_id,
     evidence_class: source.evidence_class,
     content: source.content,
@@ -26,6 +27,7 @@ test('accepts all five bounded marketing source records without granting authori
   for (const source of marketingEvidenceRecords) {
     const parsed = parseMarketingContentEnvelope(validEnvelope(source), source);
     assert.equal(parsed.claim_id, source.claim_id);
+    assert.equal(parsed.source_revision, source.source_revision);
     assert.equal(parsed.evidence_class, source.evidence_class);
     assert.equal(parsed.publication_authority, false);
     assert.equal(parsed.network_authority, false);
@@ -98,5 +100,47 @@ test('missing provenance and empty prohibited leaps fail closed', () => {
   assert.throws(
     () => parseMarketingContentEnvelope(validEnvelope(sourceRecord, { prohibited_leaps: [] }), sourceRecord),
     /prohibited_leaps must be a non-empty array/,
+  );
+});
+
+test('stale envelope revision fails closed against the current source record', () => {
+  assert.throws(
+    () => parseMarketingContentEnvelope(validEnvelope(sourceRecord, { source_revision: sourceRecord.source_revision + 1 }), sourceRecord),
+    /source_revision does not match current source record/,
+  );
+});
+
+test('superseded source evidence fails closed', () => {
+  const superseded = {
+    ...sourceRecord,
+    source_state: 'SUPERSEDED',
+    superseded_by: 'Overseer#23:5667000000',
+  };
+  assert.throws(
+    () => parseMarketingContentEnvelope(validEnvelope(superseded), superseded),
+    /source record is superseded/,
+  );
+});
+
+test('unresolved conflicting source evidence fails closed', () => {
+  const conflicted = {
+    ...sourceRecord,
+    source_state: 'CONFLICTED',
+    conflict_refs: ['Overseer#23:5667000001'],
+  };
+  assert.throws(
+    () => parseMarketingContentEnvelope(validEnvelope(conflicted), conflicted),
+    /unresolved conflicting evidence/,
+  );
+});
+
+test('current source records cannot silently carry supersession or conflict metadata', () => {
+  assert.throws(
+    () => parseMarketingContentEnvelope(validEnvelope(sourceRecord), { ...sourceRecord, superseded_by: 'Overseer#23:5667000002' }),
+    /current source record must not declare superseded_by/,
+  );
+  assert.throws(
+    () => parseMarketingContentEnvelope(validEnvelope(sourceRecord), { ...sourceRecord, conflict_refs: ['Overseer#23:5667000003'] }),
+    /unresolved conflicting evidence/,
   );
 });
