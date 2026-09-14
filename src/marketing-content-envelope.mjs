@@ -16,6 +16,8 @@ const SOURCE_RECORD_KEYS = new Set([
   'source_receipt',
   'claim_id',
   'evidence_class',
+  'content',
+  'prohibited_leaps',
 ]);
 const CREDENTIAL_KEY_PATTERN = /(credential|secret|token|api[_-]?key|password|auth)/i;
 
@@ -37,6 +39,13 @@ function requireString(value, label) {
     throw envelopeError(`${label} is required`);
   }
   return value.trim();
+}
+
+function requireStringArray(value, label) {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw envelopeError(`${label} must be a non-empty array`);
+  }
+  return value.map((entry, index) => requireString(entry, `${label}[${index}]`));
 }
 
 function rejectUnknownKeys(value, allowedKeys, label) {
@@ -74,13 +83,7 @@ export function parseMarketingContentEnvelope(envelope, sourceRecord) {
   const claim_id = requireString(envelope.claim_id, 'claim_id');
   const content = requireString(envelope.content, 'content');
   const evidence_class = validateEvidenceClass(envelope.evidence_class, 'evidence_class');
-
-  if (!Array.isArray(envelope.prohibited_leaps) || envelope.prohibited_leaps.length === 0) {
-    throw envelopeError('prohibited_leaps must be a non-empty array');
-  }
-  const prohibited_leaps = envelope.prohibited_leaps.map((value, index) =>
-    requireString(value, `prohibited_leaps[${index}]`)
-  );
+  const prohibited_leaps = requireStringArray(envelope.prohibited_leaps, 'prohibited_leaps');
 
   if (envelope.publication_authority !== false) {
     throw envelopeError('publication authority must remain false');
@@ -103,6 +106,15 @@ export function parseMarketingContentEnvelope(envelope, sourceRecord) {
 
   if (EVIDENCE_RANK.get(evidence_class) > EVIDENCE_RANK.get(sourceEvidenceClass)) {
     throw envelopeError('evidence_class cannot exceed source record');
+  }
+
+  if (sourceRecord.prohibited_leaps !== undefined) {
+    const sourceProhibitedLeaps = requireStringArray(sourceRecord.prohibited_leaps, 'source record prohibited_leaps');
+    const envelopeRestrictions = new Set(prohibited_leaps);
+    const dropped = sourceProhibitedLeaps.filter(value => !envelopeRestrictions.has(value));
+    if (dropped.length > 0) {
+      throw envelopeError('prohibited_leaps cannot drop source restrictions');
+    }
   }
 
   return Object.freeze({
