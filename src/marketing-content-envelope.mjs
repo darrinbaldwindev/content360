@@ -1,9 +1,11 @@
 const EVIDENCE_CLASSES = Object.freeze(['CONCEPT', 'DEMONSTRABLE', 'VALIDATED', 'PRODUCTION']);
 const EVIDENCE_RANK = new Map(EVIDENCE_CLASSES.map((value, index) => [value, index]));
+const SOURCE_STATES = new Set(['CURRENT', 'SUPERSEDED', 'CONFLICTED']);
 const ENVELOPE_KEYS = new Set([
   'source_kind',
   'source_issue',
   'source_receipt',
+  'source_revision',
   'claim_id',
   'evidence_class',
   'content',
@@ -14,6 +16,10 @@ const ENVELOPE_KEYS = new Set([
 const SOURCE_RECORD_KEYS = new Set([
   'source_issue',
   'source_receipt',
+  'source_revision',
+  'source_state',
+  'superseded_by',
+  'conflict_refs',
   'claim_id',
   'evidence_class',
   'content',
@@ -41,9 +47,16 @@ function requireString(value, label) {
   return value.trim();
 }
 
-function requireStringArray(value, label) {
-  if (!Array.isArray(value) || value.length === 0) {
-    throw envelopeError(`${label} must be a non-empty array`);
+function requirePositiveInteger(value, label) {
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw envelopeError(`${label} must be a positive integer`);
+  }
+  return value;
+}
+
+function requireStringArray(value, label, { allowEmpty = false } = {}) {
+  if (!Array.isArray(value) || (!allowEmpty && value.length === 0)) {
+    throw envelopeError(`${label} must be ${allowEmpty ? 'an array' : 'a non-empty array'}`);
   }
   return value.map((entry, index) => requireString(entry, `${label}[${index}]`));
 }
@@ -68,6 +81,28 @@ function validateEvidenceClass(value, label) {
   return evidenceClass;
 }
 
+function validateSourceFreshness(sourceRecord) {
+  const source_revision = requirePositiveInteger(sourceRecord.source_revision, 'source record source_revision');
+  const source_state = requireString(sourceRecord.source_state, 'source record source_state').toUpperCase();
+  if (!SOURCE_STATES.has(source_state)) {
+    throw envelopeError('source record source_state is unsupported');
+  }
+
+  const conflict_refs = requireStringArray(sourceRecord.conflict_refs, 'source record conflict_refs', { allowEmpty: true });
+  if (source_state === 'CONFLICTED' || conflict_refs.length > 0) {
+    throw envelopeError('source record has unresolved conflicting evidence');
+  }
+  if (source_state === 'SUPERSEDED') {
+    requireString(sourceRecord.superseded_by, 'source record superseded_by');
+    throw envelopeError('source record is superseded');
+  }
+  if (sourceRecord.superseded_by !== null) {
+    throw envelopeError('current source record must not declare superseded_by');
+  }
+
+  return source_revision;
+}
+
 export function parseMarketingContentEnvelope(envelope, sourceRecord) {
   requirePlainObject(envelope, 'envelope');
   requirePlainObject(sourceRecord, 'source record');
@@ -80,6 +115,7 @@ export function parseMarketingContentEnvelope(envelope, sourceRecord) {
 
   const source_issue = requireString(envelope.source_issue, 'source_issue');
   const source_receipt = requireString(envelope.source_receipt, 'source_receipt');
+  const source_revision = requirePositiveInteger(envelope.source_revision, 'source_revision');
   const claim_id = requireString(envelope.claim_id, 'claim_id');
   const content = requireString(envelope.content, 'content');
   const evidence_class = validateEvidenceClass(envelope.evidence_class, 'evidence_class');
@@ -90,6 +126,11 @@ export function parseMarketingContentEnvelope(envelope, sourceRecord) {
   }
   if (envelope.network_authority !== false) {
     throw envelopeError('network authority must remain false');
+  }
+
+  const sourceRevision = validateSourceFreshness(sourceRecord);
+  if (source_revision !== sourceRevision) {
+    throw envelopeError('source_revision does not match current source record');
   }
 
   const sourceEvidenceClass = validateEvidenceClass(sourceRecord.evidence_class, 'source record evidence_class');
@@ -122,6 +163,7 @@ export function parseMarketingContentEnvelope(envelope, sourceRecord) {
     source_kind: 'marketing.evidence_label',
     source_issue,
     source_receipt,
+    source_revision,
     claim_id,
     evidence_class,
     content,
