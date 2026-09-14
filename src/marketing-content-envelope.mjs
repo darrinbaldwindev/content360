@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 const EVIDENCE_CLASSES = Object.freeze(['CONCEPT', 'DEMONSTRABLE', 'VALIDATED', 'PRODUCTION']);
 const EVIDENCE_RANK = new Map(EVIDENCE_CLASSES.map((value, index) => [value, index]));
 const SOURCE_STATES = new Set(['CURRENT', 'SUPERSEDED', 'CONFLICTED']);
@@ -172,4 +174,30 @@ export function parseMarketingContentEnvelope(envelope, sourceRecord) {
     network_authority: false,
     canonical_memory_authority: false,
   });
+}
+
+export function buildMarketingContentProvenanceReceipt(parsedEnvelope) {
+  requirePlainObject(parsedEnvelope, 'parsed envelope');
+
+  const receiptPayload = {
+    receipt_version: 1,
+    kind: 'content360.marketing_provenance_receipt',
+    source_issue: requireString(parsedEnvelope.source_issue, 'parsed envelope source_issue'),
+    source_receipt: requireString(parsedEnvelope.source_receipt, 'parsed envelope source_receipt'),
+    source_revision: requirePositiveInteger(parsedEnvelope.source_revision, 'parsed envelope source_revision'),
+    claim_id: requireString(parsedEnvelope.claim_id, 'parsed envelope claim_id'),
+    evidence_class: validateEvidenceClass(parsedEnvelope.evidence_class, 'parsed envelope evidence_class'),
+    publication_authority: false,
+    network_authority: false,
+    canonical_memory_authority: false,
+    disposition: 'PARSED_NON_PRODUCTION',
+  };
+
+  if (parsedEnvelope.publication_authority !== false || parsedEnvelope.network_authority !== false || parsedEnvelope.canonical_memory_authority !== false) {
+    throw envelopeError('parsed envelope authority flags must remain false');
+  }
+
+  const canonical = JSON.stringify(receiptPayload);
+  const receipt_id = `sha256:${createHash('sha256').update(canonical).digest('hex')}`;
+  return Object.freeze({ ...receiptPayload, receipt_id });
 }
