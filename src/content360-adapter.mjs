@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 
 const ALLOWED_OPERATIONS = new Set(['READ', 'OPTIMISE', 'PUBLISH', 'SCHEDULE']);
+const REQUEST_INPUT_KEYS = new Set(['mission_id', 'task_id', 'operation', 'content', 'approval']);
+const APPROVAL_KEYS = new Set(['approved', 'approval_ref']);
 const REQUEST_KEYS = new Set([
   'kind',
   'mission_id',
@@ -30,13 +32,18 @@ function integrityError(message) {
   return error;
 }
 
+function rejectUnknownKeys(value, allowedKeys, label) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+  const unknownKeys = Object.keys(value).filter(key => !allowedKeys.has(key));
+  if (unknownKeys.length > 0) {
+    throw integrityError(`${label} contains unsupported fields: ${unknownKeys.sort().join(',')}`);
+  }
+}
+
 function validateRequestIntegrity(request) {
   if (!request || request.kind !== 'content360.request') throw new TypeError('invalid request');
 
-  const unknownKeys = Object.keys(request).filter(key => !REQUEST_KEYS.has(key));
-  if (unknownKeys.length > 0) {
-    throw integrityError(`request contains unsupported fields: ${unknownKeys.sort().join(',')}`);
-  }
+  rejectUnknownKeys(request, REQUEST_KEYS, 'request');
 
   const mission_id = requireString(request.mission_id, 'mission_id');
   const task_id = requireString(request.task_id, 'task_id');
@@ -69,7 +76,13 @@ function validateRequestIntegrity(request) {
   }
 }
 
-export function createContent360Request({ mission_id, task_id, operation, content, approval = null }) {
+export function createContent360Request(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new TypeError('request input is required');
+  }
+  rejectUnknownKeys(input, REQUEST_INPUT_KEYS, 'request input');
+
+  let { mission_id, task_id, operation, content, approval = null } = input;
   mission_id = requireString(mission_id, 'mission_id');
   task_id = requireString(task_id, 'task_id');
   operation = requireString(operation, 'operation').toUpperCase();
@@ -82,6 +95,12 @@ export function createContent360Request({ mission_id, task_id, operation, conten
 
   const side_effecting = operation === 'PUBLISH' || operation === 'SCHEDULE';
   let approval_ref = null;
+  if (approval !== null) {
+    if (typeof approval !== 'object' || Array.isArray(approval)) {
+      throw integrityError('approval metadata must be an object');
+    }
+    rejectUnknownKeys(approval, APPROVAL_KEYS, 'approval metadata');
+  }
   if (side_effecting) {
     if (approval?.approved !== true) {
       const error = new Error('explicit approval required');
@@ -89,6 +108,8 @@ export function createContent360Request({ mission_id, task_id, operation, conten
       throw error;
     }
     approval_ref = requireString(approval.approval_ref, 'approval_ref');
+  } else if (approval !== null) {
+    throw integrityError('non-side-effecting request must not carry approval metadata');
   }
 
   const correlation_id = stableId([mission_id, task_id, operation]);
