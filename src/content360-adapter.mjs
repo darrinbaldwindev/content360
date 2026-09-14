@@ -1,6 +1,17 @@
 import crypto from 'node:crypto';
 
 const ALLOWED_OPERATIONS = new Set(['READ', 'OPTIMISE', 'PUBLISH', 'SCHEDULE']);
+const REQUEST_KEYS = new Set([
+  'kind',
+  'mission_id',
+  'task_id',
+  'correlation_id',
+  'idempotency_key',
+  'operation',
+  'side_effecting',
+  'content',
+  'approval_ref',
+]);
 
 function requireString(value, name) {
   if (typeof value !== 'string' || value.trim() === '') {
@@ -13,8 +24,19 @@ function stableId(parts) {
   return crypto.createHash('sha256').update(parts.join('|')).digest('hex').slice(0, 24);
 }
 
+function integrityError(message) {
+  const error = new Error(message);
+  error.code = 'CONTENT360_REQUEST_INTEGRITY';
+  return error;
+}
+
 function validateRequestIntegrity(request) {
   if (!request || request.kind !== 'content360.request') throw new TypeError('invalid request');
+
+  const unknownKeys = Object.keys(request).filter(key => !REQUEST_KEYS.has(key));
+  if (unknownKeys.length > 0) {
+    throw integrityError(`request contains unsupported fields: ${unknownKeys.sort().join(',')}`);
+  }
 
   const mission_id = requireString(request.mission_id, 'mission_id');
   const task_id = requireString(request.task_id, 'task_id');
@@ -23,23 +45,27 @@ function validateRequestIntegrity(request) {
 
   const expected_side_effecting = operation === 'PUBLISH' || operation === 'SCHEDULE';
   if (request.side_effecting !== expected_side_effecting) {
-    const error = new Error('request side-effect metadata mismatch');
-    error.code = 'CONTENT360_REQUEST_INTEGRITY';
-    throw error;
+    throw integrityError('request side-effect metadata mismatch');
+  }
+
+  if (expected_side_effecting) {
+    try {
+      requireString(request.approval_ref, 'approval_ref');
+    } catch {
+      throw integrityError('side-effecting request approval metadata mismatch');
+    }
+  } else if (request.approval_ref !== null) {
+    throw integrityError('non-side-effecting request must not carry approval metadata');
   }
 
   const expected_correlation_id = stableId([mission_id, task_id, operation]);
   if (request.correlation_id !== expected_correlation_id) {
-    const error = new Error('request correlation mismatch');
-    error.code = 'CONTENT360_REQUEST_INTEGRITY';
-    throw error;
+    throw integrityError('request correlation mismatch');
   }
 
   const expected_idempotency_key = stableId([expected_correlation_id, request.content ?? '']);
   if (request.idempotency_key !== expected_idempotency_key) {
-    const error = new Error('request idempotency mismatch');
-    error.code = 'CONTENT360_REQUEST_INTEGRITY';
-    throw error;
+    throw integrityError('request idempotency mismatch');
   }
 }
 
@@ -85,15 +111,16 @@ export class MockContent360Adapter {
   #results = new Map();
 
   probeCapabilities() {
+    const operations = Object.freeze({
+      READ: true,
+      OPTIMISE: true,
+      PUBLISH: false,
+      SCHEDULE: false,
+    });
     return Object.freeze({
       kind: 'content360.capabilities',
       network_enabled: false,
-      operations: {
-        READ: true,
-        OPTIMISE: true,
-        PUBLISH: false,
-        SCHEDULE: false,
-      },
+      operations,
     });
   }
 
