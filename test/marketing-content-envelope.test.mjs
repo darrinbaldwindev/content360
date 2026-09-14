@@ -62,6 +62,16 @@ test('forged evidence promotion above the source record fails closed', () => {
   );
 });
 
+test('dropping a source prohibited-claim restriction fails closed', () => {
+  assert.throws(
+    () => parseMarketingContentEnvelope(
+      validEnvelope(sourceRecord, { prohibited_leaps: sourceRecord.prohibited_leaps.slice(0, 1) }),
+      sourceRecord,
+    ),
+    /prohibited_leaps cannot drop source restrictions/,
+  );
+});
+
 test('credential-like fields fail closed without inspecting their values', () => {
   assert.throws(
     () => parseMarketingContentEnvelope(validEnvelope(sourceRecord, { api_token: 'opaque-not-a-real-secret' }), sourceRecord),
