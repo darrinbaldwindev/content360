@@ -13,6 +13,36 @@ function stableId(parts) {
   return crypto.createHash('sha256').update(parts.join('|')).digest('hex').slice(0, 24);
 }
 
+function validateRequestIntegrity(request) {
+  if (!request || request.kind !== 'content360.request') throw new TypeError('invalid request');
+
+  const mission_id = requireString(request.mission_id, 'mission_id');
+  const task_id = requireString(request.task_id, 'task_id');
+  const operation = requireString(request.operation, 'operation').toUpperCase();
+  if (!ALLOWED_OPERATIONS.has(operation)) throw new TypeError('unsupported operation');
+
+  const expected_side_effecting = operation === 'PUBLISH' || operation === 'SCHEDULE';
+  if (request.side_effecting !== expected_side_effecting) {
+    const error = new Error('request side-effect metadata mismatch');
+    error.code = 'CONTENT360_REQUEST_INTEGRITY';
+    throw error;
+  }
+
+  const expected_correlation_id = stableId([mission_id, task_id, operation]);
+  if (request.correlation_id !== expected_correlation_id) {
+    const error = new Error('request correlation mismatch');
+    error.code = 'CONTENT360_REQUEST_INTEGRITY';
+    throw error;
+  }
+
+  const expected_idempotency_key = stableId([expected_correlation_id, request.content ?? '']);
+  if (request.idempotency_key !== expected_idempotency_key) {
+    const error = new Error('request idempotency mismatch');
+    error.code = 'CONTENT360_REQUEST_INTEGRITY';
+    throw error;
+  }
+}
+
 export function createContent360Request({ mission_id, task_id, operation, content, approval = null }) {
   mission_id = requireString(mission_id, 'mission_id');
   task_id = requireString(task_id, 'task_id');
@@ -25,10 +55,14 @@ export function createContent360Request({ mission_id, task_id, operation, conten
   }
 
   const side_effecting = operation === 'PUBLISH' || operation === 'SCHEDULE';
-  if (side_effecting && approval?.approved !== true) {
-    const error = new Error('explicit approval required');
-    error.code = 'CONTENT360_APPROVAL_REQUIRED';
-    throw error;
+  let approval_ref = null;
+  if (side_effecting) {
+    if (approval?.approved !== true) {
+      const error = new Error('explicit approval required');
+      error.code = 'CONTENT360_APPROVAL_REQUIRED';
+      throw error;
+    }
+    approval_ref = requireString(approval.approval_ref, 'approval_ref');
   }
 
   const correlation_id = stableId([mission_id, task_id, operation]);
@@ -43,7 +77,7 @@ export function createContent360Request({ mission_id, task_id, operation, conten
     operation,
     side_effecting,
     content: content ?? null,
-    approval_ref: approval?.approval_ref ?? null,
+    approval_ref,
   });
 }
 
@@ -64,7 +98,7 @@ export class MockContent360Adapter {
   }
 
   async execute(request) {
-    if (!request || request.kind !== 'content360.request') throw new TypeError('invalid request');
+    validateRequestIntegrity(request);
 
     const existing = this.#results.get(request.idempotency_key);
     if (existing) return existing;
