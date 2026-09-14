@@ -19,7 +19,7 @@ const SOURCE_RECORD_KEYS = new Set([
   'content',
   'prohibited_leaps',
 ]);
-const CREDENTIAL_KEY_PATTERN = /(credential|secret|token|api[_-]?key|password|auth)/i;
+const CREDENTIAL_KEY_PATTERN = /(^|[_-])(credential|secret|token|api[_-]?key|password|auth|authorization)([_-]|$)/i;
 
 function envelopeError(message) {
   const error = new Error(message);
