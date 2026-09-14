@@ -28,6 +28,16 @@ test('publish requires explicit approval before adapter invocation', () => {
   );
 });
 
+test('publish requires non-empty approval reference when approval is asserted', () => {
+  assert.throws(
+    () => createContent360Request({
+      mission_id: 'm-3b', task_id: 't-3b', operation: 'PUBLISH', content: 'x',
+      approval: { approved: true, approval_ref: '   ' }
+    }),
+    error => error instanceof TypeError && error.message === 'approval_ref is required'
+  );
+});
+
 test('publish remains disabled even with synthetic approval', async () => {
   const adapter = new MockContent360Adapter();
   const req = createContent360Request({
@@ -51,4 +61,25 @@ test('capability probe declares no network and no publish/schedule capability', 
   assert.equal(caps.operations.OPTIMISE, true);
   assert.equal(caps.operations.PUBLISH, false);
   assert.equal(caps.operations.SCHEDULE, false);
+});
+
+test('forged correlation id fails closed before execution', async () => {
+  const adapter = new MockContent360Adapter();
+  const req = createContent360Request({ mission_id: 'm-6', task_id: 't-6', operation: 'OPTIMISE', content: 'draft' });
+  const forged = { ...req, correlation_id: 'forged-correlation' };
+  await assert.rejects(() => adapter.execute(forged), error => error.code === 'CONTENT360_REQUEST_INTEGRITY');
+});
+
+test('forged idempotency key fails closed before replay lookup', async () => {
+  const adapter = new MockContent360Adapter();
+  const req = createContent360Request({ mission_id: 'm-7', task_id: 't-7', operation: 'OPTIMISE', content: 'draft' });
+  const forged = { ...req, idempotency_key: 'forged-idempotency' };
+  await assert.rejects(() => adapter.execute(forged), error => error.code === 'CONTENT360_REQUEST_INTEGRITY');
+});
+
+test('forged side-effect metadata fails closed', async () => {
+  const adapter = new MockContent360Adapter();
+  const req = createContent360Request({ mission_id: 'm-8', task_id: 't-8', operation: 'OPTIMISE', content: 'draft' });
+  const forged = { ...req, side_effecting: true };
+  await assert.rejects(() => adapter.execute(forged), error => error.code === 'CONTENT360_REQUEST_INTEGRITY');
 });
