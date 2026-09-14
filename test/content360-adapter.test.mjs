@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createContent360Request, MockContent360Adapter } from '../src/content360-adapter.mjs';
+import { createContent360Request, MockContent360Adapter, validateContent360Result } from '../src/content360-adapter.mjs';
 
 test('mock optimise preserves mission/task correlation', async () => {
   const adapter = new MockContent360Adapter();
@@ -198,5 +198,56 @@ test('optimise request rejects approval-shaped metadata because it cannot widen 
       approval: { approved: true, approval_ref: 'FORGED-OWNER-APPROVAL' }
     }),
     error => error.code === 'CONTENT360_REQUEST_INTEGRITY' && /must not carry approval metadata/.test(error.message)
+  );
+});
+
+test('result validator accepts the exact mock result contract', async () => {
+  const adapter = new MockContent360Adapter();
+  const req = createContent360Request({ mission_id: 'm-16', task_id: 't-16', operation: 'OPTIMISE', content: 'draft' });
+  const result = await adapter.execute(req);
+  assert.equal(validateContent360Result(result, req), true);
+});
+
+test('result validator rejects unknown fields that could smuggle authority or secrets', async () => {
+  const adapter = new MockContent360Adapter();
+  const req = createContent360Request({ mission_id: 'm-17', task_id: 't-17', operation: 'OPTIMISE', content: 'draft' });
+  const result = await adapter.execute(req);
+  const forged = { ...result, publish_authority: true, api_token: 'opaque-test-value' };
+  assert.throws(
+    () => validateContent360Result(forged, req),
+    error => error.code === 'CONTENT360_RESULT_INTEGRITY' && /unsupported fields/.test(error.message)
+  );
+});
+
+test('result validator rejects correlation drift', async () => {
+  const adapter = new MockContent360Adapter();
+  const req = createContent360Request({ mission_id: 'm-18', task_id: 't-18', operation: 'OPTIMISE', content: 'draft' });
+  const result = await adapter.execute(req);
+  const forged = { ...result, task_id: 'other-task' };
+  assert.throws(
+    () => validateContent360Result(forged, req),
+    error => error.code === 'CONTENT360_RESULT_INTEGRITY' && /task_id mismatch/.test(error.message)
+  );
+});
+
+test('result validator rejects false side-effect success', async () => {
+  const adapter = new MockContent360Adapter();
+  const req = createContent360Request({ mission_id: 'm-19', task_id: 't-19', operation: 'OPTIMISE', content: 'draft' });
+  const result = await adapter.execute(req);
+  const forged = { ...result, side_effect_performed: true };
+  assert.throws(
+    () => validateContent360Result(forged, req),
+    error => error.code === 'CONTENT360_RESULT_INTEGRITY' && /cannot claim a side effect/.test(error.message)
+  );
+});
+
+test('result validator rejects unsupported success-like status', async () => {
+  const adapter = new MockContent360Adapter();
+  const req = createContent360Request({ mission_id: 'm-20', task_id: 't-20', operation: 'OPTIMISE', content: 'draft' });
+  const result = await adapter.execute(req);
+  const forged = { ...result, status: 'PUBLISHED' };
+  assert.throws(
+    () => validateContent360Result(forged, req),
+    error => error.code === 'CONTENT360_RESULT_INTEGRITY' && /status is not supported/.test(error.message)
   );
 });
