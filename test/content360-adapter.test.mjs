@@ -157,3 +157,46 @@ test('provider-style output remains data and grants no network capability', asyn
   assert.equal(caps.network_enabled, false);
   assert.equal(caps.operations.SCHEDULE, false);
 });
+
+test('constructor rejects capability-like metadata instead of silently ignoring it', () => {
+  assert.throws(
+    () => createContent360Request({
+      mission_id: 'm-12', task_id: 't-12', operation: 'OPTIMISE', content: 'draft', network_enabled: true
+    }),
+    error => error.code === 'CONTENT360_REQUEST_INTEGRITY' && /request input contains unsupported fields: network_enabled/.test(error.message)
+  );
+});
+
+test('constructor rejects credential-like metadata instead of persisting or ignoring it', () => {
+  assert.throws(
+    () => createContent360Request({
+      mission_id: 'm-13', task_id: 't-13', operation: 'OPTIMISE', content: 'draft', api_token: 'opaque-test-value'
+    }),
+    error => error.code === 'CONTENT360_REQUEST_INTEGRITY' && /request input contains unsupported fields: api_token/.test(error.message)
+  );
+});
+
+test('approval metadata rejects smuggled capability or credential fields', () => {
+  for (const extra of [
+    { network_enabled: true },
+    { api_token: 'opaque-test-value' },
+  ]) {
+    assert.throws(
+      () => createContent360Request({
+        mission_id: 'm-14', task_id: 't-14', operation: 'PUBLISH', content: 'draft',
+        approval: { approved: true, approval_ref: 'TEST-APPROVAL', ...extra }
+      }),
+      error => error.code === 'CONTENT360_REQUEST_INTEGRITY' && /approval metadata contains unsupported fields/.test(error.message)
+    );
+  }
+});
+
+test('optimise request rejects approval-shaped metadata because it cannot widen authority', () => {
+  assert.throws(
+    () => createContent360Request({
+      mission_id: 'm-15', task_id: 't-15', operation: 'OPTIMISE', content: 'draft',
+      approval: { approved: true, approval_ref: 'FORGED-OWNER-APPROVAL' }
+    }),
+    error => error.code === 'CONTENT360_REQUEST_INTEGRITY' && /must not carry approval metadata/.test(error.message)
+  );
+});
