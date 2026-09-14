@@ -14,6 +14,17 @@ const REQUEST_KEYS = new Set([
   'content',
   'approval_ref',
 ]);
+const RESULT_KEYS = new Set([
+  'kind',
+  'mission_id',
+  'task_id',
+  'correlation_id',
+  'idempotency_key',
+  'operation',
+  'status',
+  'side_effect_performed',
+  'output',
+]);
 
 function requireString(value, name) {
   if (typeof value !== 'string' || value.trim() === '') {
@@ -32,11 +43,17 @@ function integrityError(message) {
   return error;
 }
 
-function rejectUnknownKeys(value, allowedKeys, label) {
+function resultIntegrityError(message) {
+  const error = new Error(message);
+  error.code = 'CONTENT360_RESULT_INTEGRITY';
+  return error;
+}
+
+function rejectUnknownKeys(value, allowedKeys, label, errorFactory = integrityError) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return;
   const unknownKeys = Object.keys(value).filter(key => !allowedKeys.has(key));
   if (unknownKeys.length > 0) {
-    throw integrityError(`${label} contains unsupported fields: ${unknownKeys.sort().join(',')}`);
+    throw errorFactory(`${label} contains unsupported fields: ${unknownKeys.sort().join(',')}`);
   }
 }
 
@@ -74,6 +91,30 @@ function validateRequestIntegrity(request) {
   if (request.idempotency_key !== expected_idempotency_key) {
     throw integrityError('request idempotency mismatch');
   }
+}
+
+export function validateContent360Result(result, request) {
+  validateRequestIntegrity(request);
+  if (!result || typeof result !== 'object' || Array.isArray(result) || result.kind !== 'content360.result') {
+    throw resultIntegrityError('invalid result');
+  }
+  rejectUnknownKeys(result, RESULT_KEYS, 'result', resultIntegrityError);
+
+  for (const field of ['mission_id', 'task_id', 'correlation_id', 'idempotency_key', 'operation']) {
+    if (result[field] !== request[field]) {
+      throw resultIntegrityError(`result ${field} mismatch`);
+    }
+  }
+  if (result.status !== 'SUCCEEDED') {
+    throw resultIntegrityError('result status is not supported by the mock success contract');
+  }
+  if (result.side_effect_performed !== false) {
+    throw resultIntegrityError('mock result cannot claim a side effect');
+  }
+  if (typeof result.output !== 'string') {
+    throw resultIntegrityError('result output must be a string');
+  }
+  return true;
 }
 
 export function createContent360Request(input) {
@@ -149,7 +190,10 @@ export class MockContent360Adapter {
     validateRequestIntegrity(request);
 
     const existing = this.#results.get(request.idempotency_key);
-    if (existing) return existing;
+    if (existing) {
+      validateContent360Result(existing, request);
+      return existing;
+    }
 
     if (request.operation === 'PUBLISH' || request.operation === 'SCHEDULE') {
       const error = new Error('side-effecting operations disabled in mock adapter');
@@ -177,6 +221,7 @@ export class MockContent360Adapter {
         : 'MOCK_READ_OK',
     });
 
+    validateContent360Result(result, request);
     this.#results.set(request.idempotency_key, result);
     return result;
   }
