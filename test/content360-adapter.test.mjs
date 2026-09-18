@@ -28,6 +28,29 @@ test('publish requires explicit approval before adapter invocation', () => {
   );
 });
 
+test('side-effect approval must include durable provenance reference', () => {
+  assert.throws(
+    () => createContent360Request({
+      mission_id: 'm-3b', task_id: 't-3b', operation: 'PUBLISH', content: 'x',
+      approval: { approved: true }
+    }),
+    error => error.code === 'CONTENT360_APPROVAL_PROVENANCE_REQUIRED'
+  );
+});
+
+test('approval provenance is bound into side-effect idempotency identity', () => {
+  const first = createContent360Request({
+    mission_id: 'm-3c', task_id: 't-3c', operation: 'PUBLISH', content: 'x',
+    approval: { approved: true, approval_ref: 'APPROVAL-A' }
+  });
+  const second = createContent360Request({
+    mission_id: 'm-3c', task_id: 't-3c', operation: 'PUBLISH', content: 'x',
+    approval: { approved: true, approval_ref: 'APPROVAL-B' }
+  });
+  assert.notEqual(first.idempotency_key, second.idempotency_key);
+  assert.equal(first.approval_ref, 'APPROVAL-A');
+});
+
 test('publish remains disabled even with synthetic approval', async () => {
   const adapter = new MockContent360Adapter();
   const req = createContent360Request({

@@ -25,14 +25,24 @@ export function createContent360Request({ mission_id, task_id, operation, conten
   }
 
   const side_effecting = operation === 'PUBLISH' || operation === 'SCHEDULE';
-  if (side_effecting && approval?.approved !== true) {
-    const error = new Error('explicit approval required');
-    error.code = 'CONTENT360_APPROVAL_REQUIRED';
-    throw error;
+  let approval_ref = null;
+  if (side_effecting) {
+    if (approval?.approved !== true) {
+      const error = new Error('explicit approval required');
+      error.code = 'CONTENT360_APPROVAL_REQUIRED';
+      throw error;
+    }
+    try {
+      approval_ref = requireString(approval.approval_ref, 'approval_ref');
+    } catch {
+      const error = new Error('side-effect approval provenance required');
+      error.code = 'CONTENT360_APPROVAL_PROVENANCE_REQUIRED';
+      throw error;
+    }
   }
 
   const correlation_id = stableId([mission_id, task_id, operation]);
-  const idempotency_key = stableId([correlation_id, content ?? '']);
+  const idempotency_key = stableId([correlation_id, content ?? '', approval_ref ?? '']);
 
   return Object.freeze({
     kind: 'content360.request',
@@ -43,7 +53,7 @@ export function createContent360Request({ mission_id, task_id, operation, conten
     operation,
     side_effecting,
     content: content ?? null,
-    approval_ref: approval?.approval_ref ?? null,
+    approval_ref,
   });
 }
 
